@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_shopping_list_app/shared/models/grocery_model.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_shopping_list_app/shared/data/categories_data.dart';
 import 'package:flutter_shopping_list_app/shared/models/categories_model.dart';
-import 'package:flutter_shopping_list_app/shared/models/grocery_model.dart';
 
 class NewItemScreen extends StatefulWidget {
   const NewItemScreen({super.key});
@@ -17,18 +20,48 @@ class _NewItemScreenState extends State<NewItemScreen> {
   var _enteredName = '';
   var _enteredQuantity = 1;
   var _selectedCategory = categoriesData[Categories.vegatables]!;
+  var _isSending = false;
 
-  void _saveItem() {
+  void _saveItem() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
-      Navigator.of(context).pop(
-        Grocery(
-          id: DateTime.now().toString(),
-          name: _enteredName,
-          quantity: _enteredQuantity,
-          category: _selectedCategory,
-        ),
+      setState(() {
+        _isSending = true;
+      });
+      final url = Uri.https(
+        'flutter-dummy-backend-default-rtdb.firebaseio.com',
+        'flutter-shopping-list.json',
       );
+      try {
+        final response = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: json.encode(
+            {
+              'name': _enteredName,
+              'quantity': _enteredQuantity,
+              'category': _selectedCategory.title,
+            },
+          ),
+        );
+        print(response.body);
+        print(response.statusCode);
+        final Map<String, dynamic> resData = json.decode(response.body);
+        if (!context.mounted) {
+          return null;
+        }
+
+        Navigator.of(context).pop(
+          Grocery(
+            id: resData['name'],
+            name: _enteredName,
+            quantity: _enteredQuantity,
+            category: _selectedCategory,
+          ),
+        );
+      } catch (error) {}
     }
   }
 
@@ -137,9 +170,11 @@ class _NewItemScreenState extends State<NewItemScreen> {
                 children: [
                   // reset button
                   TextButton(
-                    onPressed: () {
-                      _formKey.currentState!.reset();
-                    },
+                    onPressed: _isSending
+                        ? null
+                        : () {
+                            _formKey.currentState!.reset();
+                          },
                     child: const Text('Reset'),
                   ),
                   const SizedBox(
@@ -147,10 +182,16 @@ class _NewItemScreenState extends State<NewItemScreen> {
                   ),
                   // add item button
                   ElevatedButton(
-                    onPressed: _saveItem,
-                    child: const Text(
-                      'Add Item',
-                    ),
+                    onPressed: _isSending ? null : _saveItem,
+                    child: _isSending
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(),
+                          )
+                        : const Text(
+                            'Add Item',
+                          ),
                   ),
                 ],
               ),

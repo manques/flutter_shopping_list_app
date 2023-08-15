@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_shopping_list_app/shared/data/categories_data.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_shopping_list_app/screens/new_item/new_item_screen.dart';
 import 'package:flutter_shopping_list_app/shared/models/grocery_model.dart';
 
@@ -10,7 +14,62 @@ class GroceryListScreen extends StatefulWidget {
 }
 
 class _GroceryListScreenState extends State<GroceryListScreen> {
-  final List<Grocery> _groceryList = [];
+  List<Grocery> _groceryList = [];
+  var _isLoading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadItems();
+  }
+
+  void _loadItems() async {
+    final url = Uri.https(
+      'flutter-dummy-backend-default-rtdb.firebaseio.com',
+      'flutter-shopping-list.json',
+    );
+    try {
+      final response = await http.get(url);
+      if (response.statusCode >= 400) {
+        setState(() {
+          error = 'Fail to fetch data. Please try again later!';
+        });
+      }
+
+      if (response.body == 'null') {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+      final Map<String, dynamic> listData = json.decode(response.body);
+      final List<Grocery> loadedItem = [];
+      for (final item in listData.entries) {
+        final category = categoriesData.entries
+            .firstWhere(
+              (element) => element.value.title == item.value['category'],
+            )
+            .value;
+        loadedItem.add(
+          Grocery(
+            id: item.key,
+            name: item.value['name'],
+            quantity: item.value['quantity'],
+            category: category,
+          ),
+        );
+      }
+      setState(() {
+        _groceryList = loadedItem;
+        _isLoading = false;
+      });
+    } catch (err) {
+      setState(() {
+        error = 'Something went wrong!. Please try again later.';
+      });
+    }
+  }
 
   void _addItem() async {
     final newItem = await Navigator.of(context).push<Grocery>(
@@ -26,15 +85,27 @@ class _GroceryListScreenState extends State<GroceryListScreen> {
     });
   }
 
-  void _removeItem(Grocery grocery) {
+  void _removeItem(Grocery grocery) async {
+    final index = _groceryList.indexOf(grocery);
     setState(() {
       _groceryList.remove(grocery);
     });
+
+    final url = Uri.https(
+      'flutter-dummy-backend-default-rtdb.firebaseio.com',
+      'flutter-shopping-list/${grocery.id}.json',
+    );
+    final response = await http.delete(url);
+    if (response.statusCode >= 400) {
+      setState(() {
+        _groceryList.insert(index, grocery);
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final Widget content;
+    Widget content;
     if (_groceryList.isEmpty) {
       content = const Center(
         child: Text('No Item add yet.'),
@@ -59,6 +130,18 @@ class _GroceryListScreenState extends State<GroceryListScreen> {
             ),
           ),
         ),
+      );
+    }
+
+    if (_isLoading) {
+      content = const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (error != null) {
+      content = Center(
+        child: Text(error!),
       );
     }
 
